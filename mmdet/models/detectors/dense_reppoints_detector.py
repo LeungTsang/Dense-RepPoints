@@ -41,21 +41,22 @@ class DenseRepPointsDetector(SingleStageDetector):
     def simple_test(self, img, img_meta, rescale=False):
         x = self.extract_feat(img)
         outs = self.bbox_head(x, test=True)
+
         bbox_inputs = outs + (img_meta, self.test_cfg, rescale)
         bbox_list = self.bbox_head.get_bboxes(*bbox_inputs)
 
         det_bboxes, det_points, det_pts_scores, det_cls = bbox_list[0]
-
+        #print(det_pts_scores[0].shape)
         # cat pts_score to det_points for visualization
-        det_points_reshape = det_points[:, :-1].reshape(det_points.shape[0], -1, 2)
-        det_pts_scores_reshape = det_pts_scores[:, :-1].reshape(det_pts_scores.shape[0], -1, 1)
-        det_pts_score_cat = torch.cat([det_points_reshape, det_pts_scores_reshape], dim=-1) \
-            .reshape(det_points.shape[0], -1)
+        
+        det_points_reshape = det_points[:, :-1].reshape(det_points.shape[0], int(det_points.shape[1]/2), 2)
+        det_pts_scores_reshape = det_pts_scores[:, :-1].reshape(det_pts_scores.shape[0], det_points_reshape.shape[1], 1)
+        det_pts_score_cat = torch.cat([det_points_reshape, det_pts_scores_reshape], dim=-1).reshape(det_points.shape[0], det_points_reshape.shape[1]*3)
         det_pts_score_cls_cat = torch.cat([det_pts_score_cat, det_points[:, [-1]]], dim=-1)
 
         ori_shape = img_meta[0]['ori_shape']
         scale_factor = img_meta[0]['scale_factor']
-
+        print(scale_factor)
         bbox_results = bbox2result(det_bboxes, det_cls, self.bbox_head.num_classes)
         pts_results = pts2result(det_pts_score_cls_cat, det_cls, self.bbox_head.num_classes)
         rle_results = self.get_seg_masks(det_pts_scores[:, :-1], det_points[:, :-1], det_bboxes, det_cls,
@@ -64,7 +65,7 @@ class DenseRepPointsDetector(SingleStageDetector):
         if not rescale:
             return (bbox_results, rle_results), pts_results
         else:
-            return bbox_results, rle_results
+            return (bbox_results, rle_results), pts_results
 
     def get_seg_masks(self, pts_score, det_pts, det_bboxes, det_labels,
                       test_cfg, ori_shape, scale_factor, rescale=False):

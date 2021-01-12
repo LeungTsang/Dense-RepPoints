@@ -33,12 +33,15 @@ class CocoDataset(CustomDataset):
 
     def load_annotations(self, ann_file):
         self.coco = COCO(ann_file)
-        self.cat_ids = self.coco.getCatIds()
+        self.cat_ids = self.coco.getCatIds(catNms=['bicycle', 'car', 'motorcycle', 'bus'])
         self.cat2label = {
             cat_id: i + 1
             for i, cat_id in enumerate(self.cat_ids)
         }
-        self.img_ids = self.coco.getImgIds()
+        self.img_ids = []
+        for cat in self.cat_ids:
+          self.img_ids = self.img_ids + self.coco.getImgIds(catIds=[cat])
+        self.img_ids = list(set(self.img_ids))
         img_infos = []
         for i in self.img_ids:
             info = self.coco.loadImgs([i])[0]
@@ -48,7 +51,7 @@ class CocoDataset(CustomDataset):
 
     def get_ann_info(self, idx):
         img_id = self.img_infos[idx]['id']
-        ann_ids = self.coco.getAnnIds(imgIds=[img_id])
+        ann_ids = self.coco.getAnnIds(imgIds=[img_id], catIds=self.cat_ids)
         ann_info = self.coco.loadAnns(ann_ids)
         return self._parse_ann_info(self.img_infos[idx], ann_info)
 
@@ -390,3 +393,4 @@ class CocoDataset(CustomDataset):
         if tmp_dir is not None:
             tmp_dir.cleanup()
         return eval_results
+
