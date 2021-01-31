@@ -13,7 +13,7 @@ class ChamferLoss2D(nn.Module):
         self.loss_weight = loss_weight
         self.eps = eps
 
-    def forward(self, point_set_1, point_set_2):
+    def forward(self, point_set_1, point_set_2, half):
         """
         Computation of optimal transport distance via sinkhorn algorithm.
         - Input:
@@ -32,7 +32,10 @@ class ChamferLoss2D(nn.Module):
                 dist1, dist2, _, _ = chamfer(point_set_1, point_set_2)
                 dist1 = torch.sqrt(torch.clamp(dist1, self.eps))
                 dist2 = torch.sqrt(torch.clamp(dist2, self.eps))
-                dist = (dist1.mean(-1) + dist2.mean(-1)) / 2.0
+                if half == True:
+                    dist = dist1.mean(-1)
+                else:
+                    dist = (dist1.mean(-1) + dist2.mean(-1)) / 2.0
             else:
                 dist = chamfer(point_set_1, point_set_2)
         else:
@@ -44,7 +47,10 @@ class ChamferLoss2D(nn.Module):
                 dist1, dist2, _, _ = chamfer(point_set_1, point_set_2)
                 dist1 = torch.sqrt(torch.clamp(dist1, self.eps))
                 dist2 = torch.sqrt(torch.clamp(dist2, self.eps))
-                dist_t = (dist1.mean(-1) + dist2.mean(-1)) / 2.0
+                if half == True:
+                    dist_t = dist1.mean(-1)
+                else:
+                    dist_t = (dist1.mean(-1) + dist2.mean(-1)) / 2.0
             else:
                 dist_t = chamfer(point_set_1t, point_set_2t)
             dist_dim = point_set_1.shape[:-2]

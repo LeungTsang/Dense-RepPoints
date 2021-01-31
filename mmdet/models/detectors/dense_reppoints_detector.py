@@ -46,7 +46,6 @@ class DenseRepPointsDetector(SingleStageDetector):
         bbox_list = self.bbox_head.get_bboxes(*bbox_inputs)
 
         det_bboxes, det_points, det_pts_scores, det_cls = bbox_list[0]
-        #print(det_pts_scores[0].shape)
         # cat pts_score to det_points for visualization
         
         det_points_reshape = det_points[:, :-1].reshape(det_points.shape[0], int(det_points.shape[1]/2), 2)
@@ -56,7 +55,6 @@ class DenseRepPointsDetector(SingleStageDetector):
 
         ori_shape = img_meta[0]['ori_shape']
         scale_factor = img_meta[0]['scale_factor']
-        print(scale_factor)
         bbox_results = bbox2result(det_bboxes, det_cls, self.bbox_head.num_classes)
         pts_results = pts2result(det_pts_score_cls_cat, det_cls, self.bbox_head.num_classes)
         rle_results = self.get_seg_masks(det_pts_scores[:, :-1], det_points[:, :-1], det_bboxes, det_cls,

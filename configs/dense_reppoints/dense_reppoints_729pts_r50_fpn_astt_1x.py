@@ -48,7 +48,9 @@ model = dict(
         loss_bbox_border_init=dict(type='PtsBorderLoss', loss_weight=0.25),
         loss_bbox_border_refine=dict(type='PtsBorderLoss', loss_weight=0.5),
         loss_pts_init=dict(type='ChamferLoss2D', use_cuda=True, loss_weight=0.5, eps=1e-8),
+        loss_pts_angle_init=dict(type='ChamferLoss2D', use_cuda=True, loss_weight=1, eps=1e-8),
         loss_pts_refine=dict(type='ChamferLoss2D', use_cuda=True, loss_weight=1.0, eps=1e-8),
+        loss_pts_angle_refine=dict(type='ChamferLoss2D', use_cuda=True, loss_weight=2.0, eps=1e-8),
         loss_mask_score_init=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         transform_method='minmax'))
 # training and testing settings
