@@ -2,7 +2,7 @@ import cv2
 import mmcv
 import numpy as np
 import torch
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from mmdet.core.bbox import assign_and_sample, build_assigner, PseudoSampler
 from mmdet.core.utils import multi_apply
 
@@ -81,8 +81,10 @@ def dense_reppoints_target(proposals_list,
     proposal_weights_list = images_to_levels(all_proposal_weights, num_level_proposals, keep_dim=True)
     mask_gt_index_list = images_to_levels(all_mask_gt_index, num_level_proposals, keep_dim=True)
     mask_gt_list = mask_to_levels(all_mask_gt, mask_gt_index_list)
+    #print(len(mask_gt_list[4]))
     mask_gt_label_list = mask_to_levels(all_mask_gt_label, mask_gt_index_list)
     mask_gt_weight_list = mask_to_levels(all_mask_gt_weight, mask_gt_index_list)
+    #print(len(mask_gt_weight_list[4]))
     return (labels_list, label_weights_list, bbox_gt_list, mask_gt_list, mask_gt_label_list, mask_gt_weight_list, proposals_list,
             proposal_weights_list, num_total_pos, num_total_neg)
 
@@ -163,7 +165,7 @@ def dense_reppoints_target_sinle(flat_proposals,
     #print(gt_ind)
     gt_masks_weight = get_gt_masks_weight(gt_bboxes, gt_masks)
     sample_func = cfg.get('sample_func', 'distance_sample_pts')
-    gt_pts_numpy = eval(sample_func)(gt_bboxes, gt_masks, cfg, num_pts)
+    gt_pts_numpy = eval(sample_func)(gt_bboxes, gt_masks, gt_masks_weight, cfg, num_pts)
     #print(gt_pts_numpy.shape)
     pts_label_list = []
     pts_weight_list = []
@@ -176,7 +178,11 @@ def dense_reppoints_target_sinle(flat_proposals,
         pts_long = proposals_pos_pts[i]
         _pts_label = gt_mask[pts_long[1::2].clip(0, h - 1), pts_long[0::2].clip(0, w - 1)]
         #print(gt_weight.shape)
+        #plt.imshow(gt_mask)
+        #plt.show()
         _pts_weight = gt_weight[pts_long[1::2].clip(0, h - 1), pts_long[0::2].clip(0, w - 1)]
+        #plt.imshow(gt_weight)
+        #plt.show()
         #print(_pts_weight)
         pts_label_list.append(_pts_label)
         pts_weight_list.append(_pts_weight)
@@ -185,10 +191,14 @@ def dense_reppoints_target_sinle(flat_proposals,
     if len(gt_ind) != 0:
         gt_pts = gt_bboxes.new_tensor(gt_pts_numpy)
         pos_gt_pts = gt_pts[gt_ind]
+        #print("1")
+        #print(pos_gt_pts.shape)
         pts_label = np.stack(pts_label_list, 0)
         pts_weight = np.stack(pts_weight_list, 0)
         pos_gt_pts_label = gt_bboxes.new_tensor(pts_label)
         pos_gt_pts_weight = gt_bboxes.new_tensor(pts_weight)
+        #print("2")
+        #print(pos_gt_pts_weight.shape)
     else:
         pos_gt_pts = None
         pos_gt_pts_label = None
@@ -199,6 +209,7 @@ def dense_reppoints_target_sinle(flat_proposals,
     mask_gt = proposals.new_zeros([0, num_pts * 2])
     #print(mask_gt.shape)
     mask_gt_label = proposals.new_zeros([0, num_pts]).long()
+    mask_gt_weight = proposals.new_zeros([0, num_pts]).long()
     mask_gt_index = proposals.new_zeros([num_valid_proposals, ], dtype=torch.long)
     pos_proposals = torch.zeros_like(proposals)
     proposals_weights = proposals.new_zeros([num_valid_proposals, 4])
@@ -213,6 +224,7 @@ def dense_reppoints_target_sinle(flat_proposals,
         if pos_gt_pts is not None:
             mask_gt = pos_gt_pts.type(bbox_gt.type())
             mask_gt_index[pos_inds] = torch.arange(len(pos_inds)).long().cuda() + 1
+            #print(mask_gt_index)
         if pos_gt_pts_label is not None:
             mask_gt_label = pos_gt_pts_label.long()
         if pos_gt_pts_weight is not None:
@@ -243,6 +255,8 @@ def dense_reppoints_target_sinle(flat_proposals,
     #print('label shape')
     #print(mask_gt_label.shape)
     #print(mask_gt_index.shape)
+    #print(mask_gt.shape)
+    #print(mask_gt_weight.shape)
     return (labels, label_weights, bbox_gt, mask_gt_index, mask_gt, mask_gt_label, mask_gt_weight, pos_proposals, proposals_weights,
             pos_inds, neg_inds)
 
@@ -348,7 +362,7 @@ def get_gt_masks_weight(gt_bboxes, gt_masks):
     #np.save("w.npy",gt_masks_weight[0])
     return gt_masks_weight
 
-def distance_sample_pts(gt_bboxes, gt_masks, cfg, num_pts):
+def distance_sample_pts(gt_bboxes, gt_masks, gt_masks_weight, cfg, num_pts):
     """
     Sample pts based on distance transformation map.
 
@@ -370,9 +384,11 @@ def distance_sample_pts(gt_bboxes, gt_masks, cfg, num_pts):
         h = np.maximum(y2 - y1 + 1, 1)
         mask = mmcv.imresize(gt_masks[i][y1:y1 + h, x1:x1 + w],
                              (cfg.get('mask_size', 56), cfg.get('mask_size', 56)))
+        mask_weight = mmcv.imresize(gt_masks_weight[i][y1:y1 + h, x1:x1 + w],
+                             (cfg.get('mask_size', 56), cfg.get('mask_size', 56)))
         polygons = mask_to_poly(mask)
-        distance_map = np.ones(mask.shape).astype(np.uint8)
-        
+        distance_map = np.zeros(mask.shape).astype(np.uint8)
+
         for poly in polygons:
             poly = np.array(poly).astype(np.int)
             for j in range(len(poly) // 2):
@@ -381,16 +397,17 @@ def distance_sample_pts(gt_bboxes, gt_masks, cfg, num_pts):
                     x_1, y_1 = poly[0:2]
                 else:
                     x_1, y_1 = poly[2 * j + 2:2 * j + 4]
-                cv2.line(distance_map, (x_0, y_0), (x_1, y_1), 0, thickness=2)
-        roi_dist_map = cv2.distanceTransform(distance_map, cv2.DIST_L2, 3)
-        con_index = np.stack(np.nonzero(roi_dist_map == 0)[::-1], axis=-1)
-        roi_dist_map[roi_dist_map == 0] = 1
-        roi_dist_map[roi_dist_map > dist_sample_thr] = 0
+                cv2.line(distance_map, (x_0, y_0), (x_1, y_1), 1, thickness=4)
 
+        distance_map = distance_map & mask_weight
+        roi_dist_map = distance_map
+
+
+        #roi_dist_map = distance_map
         index_y, index_x = np.nonzero(roi_dist_map > 0)
         index = np.stack([index_x, index_y], axis=-1)
         _len = index.shape[0]
-        if len(con_index) == 0:
+        if len(index_y) == 0:
             pts = np.zeros([2 * num_pts])
         else:
             repeat = num_pts // _len

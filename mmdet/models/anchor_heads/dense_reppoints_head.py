@@ -714,9 +714,16 @@ class DenseRepPointsHead(nn.Module):
 
     def loss_single(self, cls_score, pts_pred_init, pts_pred_refine, pts_score_pred_init,
                     labels, label_weights,
-                    bbox_gt_init, pts_gt_init, bbox_weights_init,
-                    bbox_gt_refine, pts_gt_refine, pts_score_gt_label, pts_score_gt_weight, bbox_weights_refine,
+                    bbox_gt_init, pts_gt_init, pts_score_gt_weight_init, bbox_weights_init,
+                    bbox_gt_refine, pts_gt_refine, pts_score_gt_label, pts_score_gt_weight_refine, bbox_weights_refine,
                     stride, num_total_samples_init, num_total_samples_refine):
+
+        valid_pts_score_gt_weight_init = torch.cat(pts_score_gt_weight_init, 0)
+        valid_pts_score_gt_weight_init = valid_pts_score_gt_weight_init.view(-1, self.num_points, 1)
+        valid_pts_score_gt_weight_refine = torch.cat(pts_score_gt_weight_refine, 0)
+        valid_pts_score_gt_weight_refine = valid_pts_score_gt_weight_refine.view(-1, self.num_points, 1)
+        #print("weight.shape")
+        #print(valid_pts_score_gt_weight.shape)
         # classification loss
         #print(pts_pred_refine.shape)
         labels = labels.reshape(-1)
@@ -767,6 +774,9 @@ class DenseRepPointsHead(nn.Module):
         valid_pts_pred_init = mask_pred_init[bbox_weights_init[:, 0] > 0]
         valid_pts_pred_init = valid_pts_pred_init.view(-1, self.num_points, 2)
         valid_pts = valid_pts_gt_init.sum(-1).sum(-1) > 0
+        #print(valid_pts_gt_init[valid_pts])
+        #print(valid_pts_gt_init.shape)
+        #print(valid_pts_score_gt_weight.shape)
         num_total_samples = max(num_total_samples_init, 1)
 
         #print(valid_pts_gt_init.shape)
@@ -789,18 +799,25 @@ class DenseRepPointsHead(nn.Module):
         #print(valid_pts_angle_gt_init)
         #print(valid_pts_angle_pred_init)
 
+        #pts_weight_init = valid_pts_score_gt_weight_init.view(-1, self.num_points)
+        pts_weight_init = valid_pts_score_gt_weight_init.squeeze(-1).type(torch.cuda.FloatTensor)
+
         loss_pts_init = self.loss_pts_init(
             valid_pts_gt_init[valid_pts] / normalize_term,
-            valid_pts_pred_init[valid_pts] / normalize_term, True).sum() / num_total_samples
+            valid_pts_pred_init[valid_pts] / normalize_term, None, pts_weight_init[valid_pts], False).sum() / num_total_samples
 
+        #print(valid_pts_gt_init[valid_pts].shape)
+        #print(valid_pts_angle_gt_init[valid_pts].shape)
         loss_pts_angle_init = self.loss_pts_angle_init(
             valid_pts_angle_gt_init[valid_pts],
-            valid_pts_angle_pred_init[valid_pts], False).sum() / num_total_samples
+            valid_pts_angle_pred_init[valid_pts], None, None, False).sum() / num_total_samples
         #print(loss_pts_angle_init)
 
         # pts_loss_refine
         valid_pts_gt_refine = torch.cat(pts_gt_refine, 0)
         valid_pts_gt_refine = valid_pts_gt_refine.view(-1, self.num_points, 2)
+        #print("pts_gt.shape")
+        #print(valid_pts_gt_refine.shape)
         pts_pred_refine = pts_pred_refine.reshape(-1, 2 * self.num_points)
         #print(pts_pred_refine.shape)
         valid_pts_pred_refine = pts_pred_refine[bbox_weights_refine[:, 0] > 0]
@@ -817,15 +834,18 @@ class DenseRepPointsHead(nn.Module):
 
         valid_pts_angle_gt_refine = valid_pts_angle_gt_refine.expand(valid_pts_angle_gt_refine.shape[0],-1,2)
         valid_pts_angle_pred_refine = valid_pts_angle_pred_refine.expand(valid_pts_angle_gt_refine.shape[0],-1,2)
+        #print("pts_pred.shape")
+        #print(valid_pts_pred_refine[valid_pts].shape)
 
-
+        pts_weight_refine = valid_pts_score_gt_weight_refine.squeeze(-1).type(torch.cuda.FloatTensor)
+        
         loss_pts_refine = self.loss_pts_refine(
             valid_pts_gt_refine[valid_pts] / normalize_term,
-            valid_pts_pred_refine[valid_pts] / normalize_term, True).sum() / num_total_samples
+            valid_pts_pred_refine[valid_pts] / normalize_term, None, pts_weight_refine[valid_pts], False).sum() / num_total_samples
 
         loss_pts_angle_refine = self.loss_pts_angle_refine(
             valid_pts_angle_gt_refine[valid_pts],
-            valid_pts_angle_pred_refine[valid_pts], False).sum() / num_total_samples
+            valid_pts_angle_pred_refine[valid_pts], None, None, False).sum() / num_total_samples
 
 
         # mask score loss
@@ -833,17 +853,17 @@ class DenseRepPointsHead(nn.Module):
         #print(valid_pts_score_gt_label.shape)
         valid_pts_score_gt_label = valid_pts_score_gt_label.view(-1, self.num_points, 1)
         #print(valid_pts_score_gt_label.shape)
-        valid_pts_score_gt_weight = torch.cat(pts_score_gt_weight, 0)
-        valid_pts_score_gt_weight = valid_pts_score_gt_weight.view(-1, self.num_points, 1)
+
         pts_score_pred_init = pts_score_pred_init.reshape(-1, self.num_points)
         valid_pts_score_pred_init = pts_score_pred_init[bbox_weights_refine[:, 0] > 0]
         valid_pts_score_pred_init = valid_pts_score_pred_init.view(-1, self.num_points, 1)
         valid_pts_score_inds = (valid_pts_score_gt_label.sum(-1).sum(-1) > 0)
+        #print(valid_pts_score_inds)
         num_total_samples = max(num_total_samples_refine, 1)
         loss_mask_score_init = self.loss_mask_score_init(
             valid_pts_score_pred_init[valid_pts_score_inds],
             valid_pts_score_gt_label[valid_pts_score_inds],
-            weight=valid_pts_score_gt_weight[valid_pts_score_inds],
+            weight=valid_pts_score_gt_weight_refine[valid_pts_score_inds],
             #weight=bbox_weights_init.new_ones(*valid_pts_score_pred_init[valid_pts_score_inds].shape),
             avg_factor=num_total_samples
         ) / self.num_points
@@ -891,7 +911,7 @@ class DenseRepPointsHead(nn.Module):
             sampling=self.sampling,
             num_pts=self.num_points)
 
-        (*_, bbox_gt_list_init, pts_gt_list_init, _, _, proposal_list_init,
+        (*_, bbox_gt_list_init, pts_gt_list_init, pts_score_gt_label_list_init, pts_score_gt_weight_list_init, proposal_list_init,
          bbox_weights_list_init, num_total_pos_init, num_total_neg_init) = cls_reg_targets_init
         num_total_samples_init = (num_total_pos_init + num_total_neg_init if self.sampling else num_total_pos_init)
 
@@ -922,7 +942,7 @@ class DenseRepPointsHead(nn.Module):
             label_channels=label_channels,
             sampling=self.sampling,
             num_pts=self.num_points)
-        (labels_list, label_weights_list, bbox_gt_list_refine, pts_gt_list_refine, pts_score_gt_label_list, pts_score_gt_weight_list,
+        (labels_list, label_weights_list, bbox_gt_list_refine, pts_gt_list_refine, pts_score_gt_label_list_refine, pts_score_gt_weight_list_refine,
          proposal_list_refine,
          bbox_weights_list_refine, num_total_pos_refine, num_total_neg_refine) = cls_reg_targets_refine
         num_total_samples_refine = (
@@ -940,11 +960,12 @@ class DenseRepPointsHead(nn.Module):
             label_weights_list,
             bbox_gt_list_init,
             pts_gt_list_init,
+            pts_score_gt_weight_list_init,
             bbox_weights_list_init,
             bbox_gt_list_refine,
             pts_gt_list_refine,
-            pts_score_gt_label_list,
-            pts_score_gt_weight_list,
+            pts_score_gt_label_list_refine,
+            pts_score_gt_weight_list_refine,
             bbox_weights_list_refine,
             self.point_strides,
             num_total_samples_init=num_total_samples_init,

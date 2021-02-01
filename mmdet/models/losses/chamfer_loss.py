@@ -13,7 +13,7 @@ class ChamferLoss2D(nn.Module):
         self.loss_weight = loss_weight
         self.eps = eps
 
-    def forward(self, point_set_1, point_set_2, half):
+    def forward(self, point_set_1, point_set_2, weight1, weight2, half):
         """
         Computation of optimal transport distance via sinkhorn algorithm.
         - Input:
@@ -30,12 +30,28 @@ class ChamferLoss2D(nn.Module):
         if point_set_1.dim() <= 3:
             if self.use_cuda:
                 dist1, dist2, _, _ = chamfer(point_set_1, point_set_2)
-                dist1 = torch.sqrt(torch.clamp(dist1, self.eps))
-                dist2 = torch.sqrt(torch.clamp(dist2, self.eps))
+                if weight1 is not None:
+                    dist1 = torch.sqrt(torch.clamp(dist1, self.eps))*weight1
+                    dist1_mean = dist1.sum(-1)/weight1.sum(-1)
+                    #print(dist1_mean)
+                    #print(dist1.mean(-1))
+                else:
+                    dist1 = torch.sqrt(torch.clamp(dist1, self.eps))
+                    dist1_mean = dist1.mean(-1)
+                if weight2 is not None:
+                    dist2 = torch.sqrt(torch.clamp(dist2, self.eps))*weight2
+                    dist2_mean = dist2.sum(-1)/weight2.sum(-1)
+                    #print(dist2_mean)
+                    #print(dist2.mean(-1))
+                else:
+                    dist2 = torch.sqrt(torch.clamp(dist2, self.eps))
+                    dist2_mean = dist2.mean(-1)
                 if half == True:
                     dist = dist1.mean(-1)
+                    #print("dist1 shape")
+                    #print(dist1.shape)
                 else:
-                    dist = (dist1.mean(-1) + dist2.mean(-1)) / 2.0
+                    dist = (dist1_mean + dist2_mean) / 2.0
             else:
                 dist = chamfer(point_set_1, point_set_2)
         else:
